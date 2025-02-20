@@ -1,0 +1,25 @@
+
+# 01.1. Hashes - SHA256
+{
+  "hash": "0x04d3a0ee287c29c7c78792bfb1af722adcd8996ab3be0780b33e1a907115dff5"
+}
+
+# 01.2. Hashes - SHA512
+{
+  "hash": "0x87f608f74f0927367b8f6eba375f71599837e0bc146117fdfa8fb577fa33f9780cd6b71a486a9ed4a882ab382240ab693ae77533ee3f12729565cee2277c6a6e"
+}
+
+# 01.3. Hashes - RIPEMD160
+{
+  "hash": "0xe645f7787c1cd9fc8b34c9252f221742c40aaaee"
+}
+
+# 02. HMAC
+{
+  "hmac": "0x9ef1be869d4e20cfa81c2948fdb958521320becb7648d99374115d6f6bcfdd91"
+}
+
+# 03. SCrypt
+{
+  "key": "0x2efc82e60de98522ca503e3f79ae0dea906780c263276667ddbe5fd5cb518dd62711d4abe0593274ba893341eb921c6a7cc90f5cb38dce631e3c4bee1086c134"
+}
