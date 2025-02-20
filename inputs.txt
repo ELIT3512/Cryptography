@@ -1,0 +1,26 @@
+# 01.1. Hashes - SHA256
+{
+	"msg": "exercise-cryptography"
+}
+
+# 01.2. Hashes - SHA512
+{
+	"msg": "exercise-cryptography"
+}
+
+# 01.3. Hashes - RIPEMD160
+{
+	"msg": "exercise-cryptography"
+}
+
+# 02. HMAC
+{
+	"msg": "exercise-cryptography",
+	"key": "secret"
+}
+
+# 03. SCrypt
+{
+	"password": "secret",
+	"salt": "mysalt"
+}
