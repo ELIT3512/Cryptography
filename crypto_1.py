@@ -7,8 +7,27 @@ import os
 from Crypto.Hash import RIPEMD
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
+from ecies.utils import generate_key
+from Crypto.Util.Padding import unpad
+from ecies import encrypt, decrypt
+from coincurve import PublicKey
+import binascii
 
 app =Flask(__name__)
+
+# Generate EC key pairs (Peer 1 and Peer 2)
+peer1_private_key = generate_key()
+peer1_public_key = peer1_private_key.public_key
+peer1_public_key_hex = peer1_public_key.format(True).hex()
+
+peer2_private_key = generate_key()
+peer2_public_key = peer2_private_key.public_key
+peer2_public_key_hex = peer2_public_key.format(True).hex() 
+
+print(f"Peer 1 Private Key: {peer1_private_key.to_hex()}")
+print(f"Peer 1 Public Key: {peer1_public_key_hex}")
+print(f"Peer 2 Private Key: {peer2_private_key.to_hex()}")
+print(f"Peer 2 Public Key: {peer2_public_key_hex}")
 
 @app.route('/crypto1/sha256', methods=["POST"])
 def sha256_endpoint():
@@ -191,6 +210,115 @@ def decrypt_endpoint():
     except Exception as e:
         return json.dumps({"error": str(e)}), 500
 
+@app.route('/crypto1/asymmetric_encrypt', methods=["POST"])
+def asymmetric_encrypt_endpoint():
+    values = request.get_json()
+    if not values:
+        return json.dumps({"error": "Missing body"}), 400
+
+    required = ["message"]
+    if not all(k in values for k in required):
+        return json.dumps({"error": "Missing values"}), 400
+
+    # Message to encrypt
+    message = values["message"].encode()
+
+    # Generate a 16-byte IV
+    iv = os.urandom(16)
+
+    # Compute shared secret using Peer 1's private key and Peer 2's public key
+    shared_secret = peer1_private_key.ecdh(peer2_public_key.format())
+
+    # Convert shared secret to hex format
+    shared_secret_hex = binascii.hexlify(shared_secret).decode()
+
+    #  Extract the Correct 32-Byte AES Key**
+    shared_secret_bytes = binascii.unhexlify(shared_secret_hex)
+    if len(shared_secret_bytes) >= 33:
+        aes_key = shared_secret_bytes[1:33]  # Remove first byte, take 32 bytes
+    else:
+        aes_key = shared_secret_bytes[-32:]  # Take last 32 bytes if shorter
+
+    #  Process IV to Ensure Correct 14-Byte Counter**
+    iv_bytes = iv[2:] if len(iv) > 2 else iv  # Ensure IV remains 14 bytes
+    ctr_nonce = iv_bytes[:14]  # First 14 bytes used as nonce
+
+    # **AES-256-CTR Encryption with PKCS7 Padding**
+    cipher = AES.new(aes_key, AES.MODE_CTR, nonce=ctr_nonce)
+    encrypted_message_aes = cipher.encrypt(pad(message, AES.block_size))
+
+    # **Calculate HMAC-SHA256**
+    mac = hmac.new(aes_key, encrypted_message_aes, hashlib.sha256).hexdigest()
+
+    # **Prepare Response**
+    response = {
+        "peer1_public_key": peer1_public_key_hex,
+        "iv": iv.hex(),
+        "hmac": mac,
+        "encrypted_message": binascii.hexlify(encrypted_message_aes).decode()
+    }
+
+    return json.dumps(response, indent=4), 201
+
+@app.route('/crypto1/asymmetric_decrypt', methods=["POST"])
+def asymmetric_decrypt_endpoint():
+    values = request.get_json()
+    if not values:
+        return json.dumps({"error": "Missing body"}), 400
+
+    required = ["encrypted_message", "hmac", "iv", "peer1_public_key"]
+    if not all(k in values for k in required):
+        return json.dumps({"error": "Missing values"}), 400
+
+    # **Extract values from request**
+    encrypted_message = binascii.unhexlify(values["encrypted_message"])
+    hmac_received = values["hmac"]
+    iv = binascii.unhexlify(values["iv"])
+    peer1_public_key_input_hex = values["peer1_public_key"]
+
+    # **Convert Peer 1's Public Key from HEX to an EC PublicKey Object**
+    peer1_public_key_input = PublicKey(binascii.unhexlify(peer1_public_key_input_hex))
+
+    # **Compute shared secret using Peer 2's private key and Peer 1's public key**
+    shared_secret = peer2_private_key.ecdh(peer1_public_key_input.format())
+
+    # Convert shared secret to hex format
+    shared_secret_hex = binascii.hexlify(shared_secret).decode()
+
+    # **Extract 32-byte AES key from shared secret**
+    shared_secret_bytes = binascii.unhexlify(shared_secret_hex)
+    if len(shared_secret_bytes) >= 33:
+        aes_key = shared_secret_bytes[1:33]  # Remove first byte, take 32 bytes
+    else:
+        aes_key = shared_secret_bytes[-32:]  # Take last 32 bytes if shorter
+
+    # **Process IV (Remove first 2 bytes for CTR mode)**
+    iv_bytes = iv[2:] if len(iv) > 2 else iv  # Ensure IV remains 14 bytes
+    ctr_nonce = iv_bytes[:14]  # Use first 14 bytes as nonce
+
+    # **Verify HMAC BEFORE Decryption**
+    hmac_computed = hmac.new(aes_key, encrypted_message, hashlib.sha256).hexdigest()
+    if hmac_computed != hmac_received:
+        return json.dumps({"error": "HMAC verification failed! Message integrity compromised."}), 401
+
+    # **AES-256-CTR Decryption**
+    cipher = AES.new(aes_key, AES.MODE_CTR, nonce=ctr_nonce)
+    decrypted_message = cipher.decrypt(encrypted_message)
+
+    # **Remove PKCS7 Padding (If Padding Was Used During Encryption)**
+    try:
+        decrypted_message = unpad(decrypted_message, AES.block_size).decode()
+    except ValueError:
+        return json.dumps({"error": "Padding is incorrect. Decryption may be invalid."}), 400
+
+    # **Return Decrypted Message**
+    response = {
+        "decrypted_message": decrypted_message,
+        "hmac_verified": True
+    }
+
+    return json.dumps(response, indent=4), 200
+    
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
 
